@@ -28,8 +28,7 @@ DEFAULT_FILE_LIMIT = 10
 def run(file_limit: int | None = DEFAULT_FILE_LIMIT) -> None:
     if not EXTRACTED_DIR.exists():
         print(
-            f"ERROR: {EXTRACTED_DIR} does not exist. "
-            "Run scripts/extract_data.sh first.",
+            f"ERROR: {EXTRACTED_DIR} does not exist. Run scripts/extract_data.sh first.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -71,7 +70,11 @@ def run(file_limit: int | None = DEFAULT_FILE_LIMIT) -> None:
             errors.append(result)
 
     gauge_count = db.con.execute("SELECT COUNT(*) FROM gauges_list").fetchone()[0]
-    print(f"\nDone. Gauges: {gauge_count:,} | Measurements: {total_meas:,} | Phenomena: {total_phen:,}")
+    print(
+        f"\nDone. Gauges: {gauge_count:,} |"
+        f" Measurements: {total_meas:,} |"
+        f" Phenomena: {total_phen:,}"
+    )
     if errors:
         print(f"Errors: {len(errors)}")
     print(f"Database: {DB_PATH}")

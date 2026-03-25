@@ -13,14 +13,16 @@ class GaugeRepository:
     def upsert_many(self, gauges: list[Gauge]) -> None:
         if not gauges:
             return
-        df = pd.DataFrame([
-            {
-                "station_code": g.station_code,
-                "station_name": g.station_name,
-                "river_name": g.river_name,
-            }
-            for g in gauges
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "station_code": g.station_code,
+                    "station_name": g.station_name,
+                    "river_name": g.river_name,
+                }
+                for g in gauges
+            ]
+        )
         self._con.register("_gauges_tmp", df)
         self._con.execute("""
             INSERT INTO gauges_list (station_code, station_name, river_name)
@@ -56,8 +58,7 @@ class MeasurementRepository:
 
     def query_by_station(self, station_code: str) -> pd.DataFrame:
         return self._con.execute(
-            "SELECT * FROM measurements"
-            " WHERE station_code = ? ORDER BY measured_at",
+            "SELECT * FROM measurements WHERE station_code = ? ORDER BY measured_at",
             [station_code],
         ).df()
 
@@ -85,7 +86,6 @@ class PhenomenonRepository:
 
     def query_by_station(self, station_code: str) -> pd.DataFrame:
         return self._con.execute(
-            "SELECT * FROM phenomena"
-            " WHERE station_code = ? ORDER BY measured_at",
+            "SELECT * FROM phenomena WHERE station_code = ? ORDER BY measured_at",
             [station_code],
         ).df()

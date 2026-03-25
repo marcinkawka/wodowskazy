@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from modules import parser
+
 from .models import Gauge
 from .repository import (
     GaugeRepository,
@@ -36,9 +37,7 @@ class HydroService:
         self._phenomena = phenomenon_repo
 
     def _extract_gauges(self, df: pd.DataFrame) -> list[Gauge]:
-        unique = df[["station_code", "station_name", "river_name"]].drop_duplicates(
-            "station_code"
-        )
+        unique = df[["station_code", "station_name", "river_name"]].drop_duplicates("station_code")
         return [
             Gauge(
                 station_code=row.station_code,
@@ -56,11 +55,18 @@ class HydroService:
 
             self._gauges.upsert_many(self._extract_gauges(df))
 
-            meas = df[[
-                "station_code", "measured_at",
-                "hydro_year", "hydro_month", "calendar_month",
-                "water_level_cm", "flow_m3s", "water_temp_c",
-            ]].copy()
+            meas = df[
+                [
+                    "station_code",
+                    "measured_at",
+                    "hydro_year",
+                    "hydro_month",
+                    "calendar_month",
+                    "water_level_cm",
+                    "flow_m3s",
+                    "water_temp_c",
+                ]
+            ].copy()
             self._measurements.upsert_batch(meas)
             return ProcessResult(file=path, rows=len(meas), ok=True)
 
@@ -75,11 +81,18 @@ class HydroService:
 
             self._gauges.upsert_many(self._extract_gauges(df))
 
-            phen = df[[
-                "station_code", "measured_at", "hydro_year", "hydro_month",
-                "ice_thickness_cm", "ice_phenomenon_code",
-                "ice_phenomenon_pct", "overgrowth_code",
-            ]].copy()
+            phen = df[
+                [
+                    "station_code",
+                    "measured_at",
+                    "hydro_year",
+                    "hydro_month",
+                    "ice_thickness_cm",
+                    "ice_phenomenon_code",
+                    "ice_phenomenon_pct",
+                    "overgrowth_code",
+                ]
+            ].copy()
             self._phenomena.upsert_batch(phen)
             return ProcessResult(file=path, rows=len(phen), ok=True)
 

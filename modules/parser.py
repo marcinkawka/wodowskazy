@@ -25,16 +25,29 @@ ENCODING = "cp1250"
 MEASUREMENT_HOUR_UTC = 7
 
 _CODZ_COLS = [
-    "station_code", "station_name", "river_name",
-    "hydro_year", "hydro_month", "day",
-    "water_level_cm", "flow_m3s", "water_temp_c", "calendar_month",
+    "station_code",
+    "station_name",
+    "river_name",
+    "hydro_year",
+    "hydro_month",
+    "day",
+    "water_level_cm",
+    "flow_m3s",
+    "water_temp_c",
+    "calendar_month",
 ]
 
 _ZJAW_COLS = [
-    "station_code", "station_name", "river_name",
-    "hydro_year", "hydro_month", "day",
-    "ice_thickness_cm", "ice_phenomenon_code",
-    "ice_phenomenon_pct", "overgrowth_code",
+    "station_code",
+    "station_name",
+    "river_name",
+    "hydro_year",
+    "hydro_month",
+    "day",
+    "ice_thickness_cm",
+    "ice_phenomenon_code",
+    "ice_phenomenon_pct",
+    "overgrowth_code",
 ]
 
 
@@ -58,7 +71,7 @@ def _calendar_year(
     cal_month: pd.Series,
 ) -> pd.Series:
     """
-    Polish hydrological year runs Nov 1 – Oct 31.
+    Polish hydrological year runs Nov 1 - Oct 31.
     Calendar months 11-12 belong to (hydro_year - 1).
     """
     return hydro_year.where(cal_month <= 10, hydro_year - 1)
@@ -105,13 +118,9 @@ def read_codz(path: Path) -> pd.DataFrame:
     df["calendar_month"] = pd.to_numeric(df["calendar_month"], errors="coerce")
     missing = df["calendar_month"].isna()
     if missing.any():
-        df.loc[missing, "calendar_month"] = _hydro_month_to_calendar(
-            df.loc[missing, "hydro_month"]
-        )
+        df.loc[missing, "calendar_month"] = _hydro_month_to_calendar(df.loc[missing, "hydro_month"])
 
-    df["measured_at"] = _build_timestamps(
-        df["hydro_year"], df["calendar_month"], df["day"]
-    )
+    df["measured_at"] = _build_timestamps(df["hydro_year"], df["calendar_month"], df["day"])
     df = df.dropna(subset=["measured_at"])
 
     df["water_level_cm"] = pd.to_numeric(df["water_level_cm"], errors="coerce")
@@ -148,12 +157,8 @@ def read_zjaw(path: Path) -> pd.DataFrame:
     df["measured_at"] = _build_timestamps(df["hydro_year"], cal_month, df["day"])
     df = df.dropna(subset=["measured_at"])
 
-    df["ice_thickness_cm"] = pd.to_numeric(
-        df["ice_thickness_cm"], errors="coerce"
-    )
-    df["ice_phenomenon_pct"] = pd.to_numeric(
-        df["ice_phenomenon_pct"], errors="coerce"
-    )
+    df["ice_thickness_cm"] = pd.to_numeric(df["ice_thickness_cm"], errors="coerce")
+    df["ice_phenomenon_pct"] = pd.to_numeric(df["ice_phenomenon_pct"], errors="coerce")
     df.loc[df["ice_thickness_cm"] == 999, "ice_thickness_cm"] = pd.NA
     df["ice_phenomenon_code"] = df["ice_phenomenon_code"].replace("", pd.NA)
     df["overgrowth_code"] = df["overgrowth_code"].replace("", pd.NA)
