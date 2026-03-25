@@ -8,11 +8,11 @@ A lightweight ETL pipeline that downloads, extracts, parses, and aggregates **70
 
 ## What's inside
 
-- **866 monthly measurement files** (1951–2024) with daily water level, flow, and temperature
-- **74 annual ice/vegetation phenomena files** tracking freeze events, ice cover, and river overgrowth
-- **~250 gauge stations** across Poland with data going back to 1951
-- Timestamps stored at **07:00 UTC** (the standard IMGW-PIB observation time)
+- **~18.9 million daily measurement records** across 1,291 gauge stations (1951–2024)
+- **866 monthly CODZ files** — water level, flow, and temperature
+- **74 annual ZJAW files** — ice phenomena and river overgrowth observations
 - Pre-computed **monthly, annual, and all-time statistics** using standard IMGW notation
+- Timestamps at **07:00 UTC** (the standard IMGW-PIB daily observation time)
 
 ---
 
@@ -34,20 +34,19 @@ Two file types are parsed:
 ### Raw data tables
 
 ```
-gauges_list              measurements                  phenomena
-─────────────────        ──────────────────────────    ──────────────────────────
-station_code  PK    ←──  station_code          FK  ←── station_code        FK
-station_name             measured_at TIMESTAMPTZ       measured_at TIMESTAMPTZ
-river_name               hydro_year                    hydro_year
-lat                      hydro_month                   hydro_month
-lon                      calendar_month                ice_thickness_cm
-                         water_level_cm                ice_phenomenon_code
-                         flow_m3s                      ice_phenomenon_pct
-                         water_temp_c                  overgrowth_code
+gauges_list              measurements             phenomena
+─────────────────        ─────────────────────    ──────────────────────
+station_code  PK    ←──  station_code      FK  ←── station_code     FK
+station_name             date                      date
+river_name               hydro_year                hydro_year
+lat                      hydro_month               hydro_month
+lon                      calendar_month            ice_thickness_cm
+                         water_level_cm            ice_phenomenon_code
+                         flow_m3s                  ice_phenomenon_pct
+                         water_temp_c              overgrowth_code
 ```
 
-`measured_at` is stored as `TIMESTAMPTZ` at **07:00 UTC** (09:00 CET / 08:00 CEST).
-`PRIMARY KEY (station_code, measured_at)` enforces one measurement per station per day.
+`PRIMARY KEY (station_code, date)` enforces one measurement per station per day.
 Index on `station_code` for fast per-station queries.
 
 ### Statistics tables
@@ -67,8 +66,11 @@ Pre-computed aggregates using standard **IMGW notation**:
 | `stats_annual` | `(station_code, hydro_year)` | `NQ SQ ZQ WQ NW SW ZW WW mes_count` |
 | `stats_alltime` | `station_code` | `NNQ WWQ SWQ SNQ SSQ mes_count` |
 
-All-time columns are derived from monthly statistics:
+All-time columns derived from monthly statistics:
 `NNQ` = min(NQ) · `WWQ` = max(WQ) · `SWQ` = avg(WQ) · `SNQ` = avg(NQ) · `SSQ` = avg(SQ)
+
+`mes_count` = number of source rows used to compute each statistic.
+All values rounded to 2 decimal places.
 
 ---
 
@@ -117,7 +119,7 @@ Mirrors the directory structure from `incoming_data/` into `extracted_data/`, ex
 # Quick test — first 10 files only
 uv run python raw_data_parser.py
 
-# Full load — all ~940 files
+# Full load — all ~940 files (~18.9M rows)
 uv run python raw_data_parser.py --all
 ```
 
@@ -127,7 +129,7 @@ uv run python raw_data_parser.py --all
 uv run python stats_calculator.py
 ```
 
-Populates `stats_monthly`, `stats_annual`, and `stats_alltime`. Safe to re-run after loading more data.
+Populates `stats_monthly` (621K rows), `stats_annual` (52K rows), and `stats_alltime` (1,291 stations). Safe to re-run at any time.
 
 Output: `hydro.duckdb` in the project root.
 
@@ -142,23 +144,23 @@ con = duckdb.connect("hydro.duckdb")
 
 # Daily readings for a station
 con.execute("""
-    SELECT measured_at, water_level_cm, flow_m3s
+    SELECT date, water_level_cm, flow_m3s
     FROM measurements
     WHERE station_code = '149180020'
-    ORDER BY measured_at
+    ORDER BY date
 """).df()
 
 # All-time characteristic flows — top 10 stations by peak flow
 con.execute("""
     SELECT g.station_name, g.river_name,
-           a.NNQ, a.SSQ, a.SWQ, a.WWQ
+           a.NNQ, a.SNQ, a.SSQ, a.SWQ, a.WWQ
     FROM stats_alltime a
     JOIN gauges_list g USING (station_code)
     ORDER BY WWQ DESC NULLS LAST
     LIMIT 10
 """).df()
 
-# Monthly flow statistics for a specific station
+# Monthly flow statistics for a station
 con.execute("""
     SELECT year, month, NQ, SQ, ZQ, WQ, mes_count
     FROM stats_monthly
@@ -194,7 +196,7 @@ wodowskazy/
 │       ├── models.py           # Gauge dataclass
 │       ├── repository.py       # GaugeRepository, MeasurementRepository, PhenomenonRepository
 │       ├── service.py          # HydroService — orchestrates parsing + persistence
-│       └── stats_repository.py # StatsRepository — monthly / annual / alltime SQL
+│       └── stats_repository.py # StatsRepository — monthly / annual / all-time SQL
 ├── raw_data_parser.py          # entry point: CSV files → measurements + phenomena
 ├── stats_calculator.py         # entry point: measurements → stats tables
 ├── pyproject.toml              # dependencies + ruff + mypy config
