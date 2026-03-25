@@ -23,36 +23,34 @@ class StatsRepository:
     def compute_monthly(self) -> int:
         """
         Aggregate measurements into monthly statistics grouped by
-        station + calendar year + calendar month (from measured_at).
+        station + calendar year + calendar month (from date).
         mes_count = number of daily records in the group.
         """
+        # CTE isolates the aggregation scope — workaround for a DuckDB binder
+        # bug where INSERT INTO target causes the target's column names to shadow
+        # source columns (date becomes invisible) in GROUP BY resolution.
         self._con.execute("""
-            INSERT INTO stats_monthly
-            SELECT
-                station_code,
-                year(measured_at)                    AS year,
-                month(measured_at)                   AS month,
-                ROUND(MIN(flow_m3s),          2)     AS NQ,
-                ROUND(AVG(flow_m3s),          2)     AS SQ,
-                ROUND(MEDIAN(flow_m3s),       2)     AS ZQ,
-                ROUND(MAX(flow_m3s),          2)     AS WQ,
-                ROUND(MIN(water_level_cm),    2)     AS NW,
-                ROUND(AVG(water_level_cm),    2)     AS SW,
-                ROUND(MEDIAN(water_level_cm), 2)     AS ZW,
-                ROUND(MAX(water_level_cm),    2)     AS WW,
-                COUNT(*)                             AS mes_count
-            FROM measurements
-            GROUP BY station_code, year(measured_at), month(measured_at)
-            ON CONFLICT (station_code, year, month) DO UPDATE SET
-                NQ        = excluded.NQ,
-                SQ        = excluded.SQ,
-                ZQ        = excluded.ZQ,
-                WQ        = excluded.WQ,
-                NW        = excluded.NW,
-                SW        = excluded.SW,
-                ZW        = excluded.ZW,
-                WW        = excluded.WW,
-                mes_count = excluded.mes_count
+            WITH agg AS (
+                SELECT
+                    station_code,
+                    CAST(EXTRACT(YEAR  FROM date) AS INTEGER) AS year,
+                    CAST(EXTRACT(MONTH FROM date) AS INTEGER) AS month,
+                    ROUND(MIN(flow_m3s),          2)     AS NQ,
+                    ROUND(AVG(flow_m3s),          2)     AS SQ,
+                    ROUND(MEDIAN(flow_m3s),       2)     AS ZQ,
+                    ROUND(MAX(flow_m3s),          2)     AS WQ,
+                    ROUND(MIN(water_level_cm),    2)     AS NW,
+                    ROUND(AVG(water_level_cm),    2)     AS SW,
+                    ROUND(MEDIAN(water_level_cm), 2)     AS ZW,
+                    ROUND(MAX(water_level_cm),    2)     AS WW,
+                    COUNT(*)                             AS mes_count
+                FROM measurements
+                GROUP BY
+                    station_code,
+                    EXTRACT(YEAR  FROM date),
+                    EXTRACT(MONTH FROM date)
+            )
+            INSERT INTO stats_monthly SELECT * FROM agg
         """)
         return self._con.execute("SELECT COUNT(*) FROM stats_monthly").fetchone()[0]
 
@@ -79,16 +77,6 @@ class StatsRepository:
             FROM measurements
             WHERE hydro_year IS NOT NULL
             GROUP BY station_code, hydro_year
-            ON CONFLICT (station_code, hydro_year) DO UPDATE SET
-                NQ        = excluded.NQ,
-                SQ        = excluded.SQ,
-                ZQ        = excluded.ZQ,
-                WQ        = excluded.WQ,
-                NW        = excluded.NW,
-                SW        = excluded.SW,
-                ZW        = excluded.ZW,
-                WW        = excluded.WW,
-                mes_count = excluded.mes_count
         """)
         return self._con.execute("SELECT COUNT(*) FROM stats_annual").fetchone()[0]
 
@@ -116,13 +104,6 @@ class StatsRepository:
                 COUNT(*)             AS mes_count
             FROM stats_monthly
             GROUP BY station_code
-            ON CONFLICT (station_code) DO UPDATE SET
-                NNQ       = excluded.NNQ,
-                WWQ       = excluded.WWQ,
-                SWQ       = excluded.SWQ,
-                SNQ       = excluded.SNQ,
-                SSQ       = excluded.SSQ,
-                mes_count = excluded.mes_count
         """)
         return self._con.execute("SELECT COUNT(*) FROM stats_alltime").fetchone()[0]
 
