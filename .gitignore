@@ -1,2 +1,31 @@
-./incoming_data/*
-./prompts/*
+incoming_data/
+extracted_data/
+prompts/
+CLAUDE.md
+.claude/*
+*.duckdb
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
