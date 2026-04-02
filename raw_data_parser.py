@@ -22,7 +22,7 @@ from modules.db.service import HydroService
 
 EXTRACTED_DIR = Path(__file__).parent / "extracted_data"
 DB_PATH = Path(__file__).parent / "hydro.duckdb"
-DEFAULT_FILE_LIMIT = 10
+DEFAULT_FILE_LIMIT = 300
 
 
 def run(file_limit: int | None = DEFAULT_FILE_LIMIT) -> None:
