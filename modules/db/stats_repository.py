@@ -33,8 +33,8 @@ class StatsRepository:
             WITH agg AS (
                 SELECT
                     station_code,
-                    CAST(EXTRACT(YEAR  FROM date) AS INTEGER) AS year,
-                    CAST(EXTRACT(MONTH FROM date) AS INTEGER) AS month,
+                    CAST(EXTRACT(YEAR  FROM measured_at) AS INTEGER) AS year,
+                    calendar_month                                    AS month,
                     ROUND(MIN(flow_m3s),          2)     AS NQ,
                     ROUND(AVG(flow_m3s),          2)     AS SQ,
                     ROUND(MEDIAN(flow_m3s),       2)     AS ZQ,
@@ -47,8 +47,8 @@ class StatsRepository:
                 FROM measurements
                 GROUP BY
                     station_code,
-                    EXTRACT(YEAR  FROM date),
-                    EXTRACT(MONTH FROM date)
+                    EXTRACT(YEAR  FROM measured_at),
+                    calendar_month
             )
             INSERT INTO stats_monthly SELECT * FROM agg
         """)

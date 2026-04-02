@@ -120,5 +120,44 @@ class Database:
             )
         """)
 
+    def create_stat_tests_schema(self) -> None:
+        """
+        Create tables for statistical tests catalogue and test results.
+        stat_tests is seeded with the three standard tests on first creation.
+        stat_test_results is append-only; re-running the script adds new rows.
+        """
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS stat_tests (
+                id    INTEGER PRIMARY KEY,
+                name  VARCHAR NOT NULL UNIQUE
+            )
+        """)
+        self.con.execute("""
+            INSERT INTO stat_tests (id, name)
+            VALUES
+                (1, 'Grubbs-Beck test'),
+                (2, 'Kruskal-Wallis test'),
+                (3, 'Chi-square test'),
+                (4, 'Wald-Wolfowitz runs test'),
+                (5, 'Mann-Kendall test'),
+                (6, 'Spearman rank correlation test')
+            ON CONFLICT (id) DO NOTHING
+        """)
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS stat_test_results (
+                id            INTEGER PRIMARY KEY,
+                series_type   VARCHAR  NOT NULL,
+                station_code  VARCHAR  NOT NULL,
+                test_id       INTEGER  NOT NULL REFERENCES stat_tests(id),
+                period_start  INTEGER,
+                period_end    INTEGER,
+                result_notes  VARCHAR,
+                result        BOOLEAN  NOT NULL
+            )
+        """)
+        self.con.execute("""
+            CREATE SEQUENCE IF NOT EXISTS stat_test_results_id_seq START 1
+        """)
+
     def close(self) -> None:
         self.con.close()
