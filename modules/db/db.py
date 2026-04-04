@@ -167,5 +167,83 @@ class Database:
             CREATE SEQUENCE IF NOT EXISTS stat_test_results_id_seq START 1
         """)
 
+    def create_frequency_analysis_schema(self) -> None:
+        """
+        Create catalogue and result tables for flood-frequency analysis.
+
+        Catalogues (seeded, append-only):
+            distributions        — statistical distribution families
+            estimation_methods   — parameter estimation approaches
+            frequencies          — source series type (annual / seasonal)
+
+        Results:
+            estimated_discharges — Q_100 / Q_1000 estimates per station,
+                                   linked to distribution, method and frequency;
+                                   append-only, notes stored as JSON.
+        """
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS distributions (
+                id              INTEGER PRIMARY KEY,
+                name            VARCHAR NOT NULL UNIQUE,
+                additional_note TEXT
+            )
+        """)
+        self.con.execute("""
+            INSERT INTO distributions (id, name, additional_note)
+            VALUES
+                (1, 'Gumbel',          NULL),
+                (2, 'Log-Normal',      NULL),
+                (3, 'Pearson III',     NULL),
+                (4, 'Log-Pearson III', NULL),
+                (5, 'GEV',             NULL)
+            ON CONFLICT (id) DO NOTHING
+        """)
+
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS estimation_methods (
+                id   INTEGER PRIMARY KEY,
+                name VARCHAR NOT NULL UNIQUE
+            )
+        """)
+        self.con.execute("""
+            INSERT INTO estimation_methods (id, name)
+            VALUES
+                (1, 'Method of Moments'),
+                (2, 'Maximum Likelihood'),
+                (3, 'Linear Moments'),
+                (4, 'Weighted Moments')
+            ON CONFLICT (id) DO NOTHING
+        """)
+
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS frequencies (
+                id   INTEGER PRIMARY KEY,
+                name VARCHAR NOT NULL UNIQUE
+            )
+        """)
+        self.con.execute("""
+            INSERT INTO frequencies (id, name)
+            VALUES
+                (1, 'annual'),
+                (2, 'winter'),
+                (3, 'summer')
+            ON CONFLICT (id) DO NOTHING
+        """)
+
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS estimated_discharges (
+                id                   INTEGER PRIMARY KEY,
+                station_code         VARCHAR  NOT NULL REFERENCES gauges_list(station_code),
+                return_period        INTEGER  NOT NULL CHECK (return_period IN (100, 1000)),
+                distribution_id      INTEGER  NOT NULL REFERENCES distributions(id),
+                estimation_method_id INTEGER  NOT NULL REFERENCES estimation_methods(id),
+                frequency_id         INTEGER  NOT NULL REFERENCES frequencies(id),
+                notes                JSON
+            )
+        """)
+        self.con.execute("""
+            CREATE SEQUENCE IF NOT EXISTS estimated_discharges_id_seq START 1
+        """)
+
     def close(self) -> None:
         self.con.close()
