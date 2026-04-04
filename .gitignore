@@ -31,3 +31,5 @@ Thumbs.db
 .env.local
 *.zip
 incoming_data/
+TODO.md
+scripts/imgw_dobowe/
