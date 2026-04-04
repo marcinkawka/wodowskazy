@@ -29,6 +29,10 @@ ignore = [
     "B008", # do not perform function call in default arguments
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Mathematical docstrings use intentional Unicode (Greek letters, minus sign).
+"modules/stat_tests.py" = ["RUF002"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["modules"]
 

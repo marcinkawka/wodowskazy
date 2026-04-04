@@ -16,8 +16,10 @@ SpearmanRankTest        — Spearman rank correlation with time (trend)
 """
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import numpy as np
+import pandas as pd
 from scipy import stats
 
 
@@ -25,22 +27,26 @@ class StatisticalTest(ABC):
     """Abstract base for hydrological statistical tests."""
 
     @abstractmethod
-    def run(self, timeseries: list[float]) -> tuple[bool, list[float]]:
+    def run(self, timeseries: pd.Series) -> tuple[bool, list[Any]]:
         """
-        Run the test on a timeseries of observed values.
+        Run the test on a labelled timeseries of observed values.
 
         Parameters
         ----------
-        timeseries : list[float]
-            Observed values (must contain at least 3 positive entries).
+        timeseries : pd.Series
+            Observed values with a meaningful index (e.g. hydro_year integers
+            or timestamps).  Must contain at least 3 positive entries for tests
+            that require positivity (Grubbs-Beck).
 
         Returns
         -------
         passed : bool
             True if the series passes the test (no outliers / hypothesis not
             rejected), False otherwise.
-        outliers : list[float]
-            Values identified as outliers (empty when passed=True).
+        outlier_labels : list[Any]
+            Index labels of observations identified as outliers.
+            Empty when passed=True or when the test does not identify individual
+            outliers (e.g. Kruskal-Wallis, trend tests).
         """
         ...
 
@@ -80,11 +86,12 @@ class GrubbsBeckTest(StatisticalTest):
         t_crit = float(stats.t.ppf(1.0 - p, df=n - 2))
         return (n - 1) / np.sqrt(n) * np.sqrt(t_crit**2 / (n - 2 + t_crit**2))
 
-    def run(self, timeseries: list[float]) -> tuple[bool, list[float]]:
-        data = np.array([x for x in timeseries if x > 0], dtype=float)
-        if len(data) < 3:
-            raise ValueError(f"Need at least 3 positive values, got {len(data)}")
+    def run(self, timeseries: pd.Series) -> tuple[bool, list[Any]]:
+        positive = timeseries[timeseries > 0]
+        if len(positive) < 3:
+            raise ValueError(f"Need at least 3 positive values, got {len(positive)}")
 
+        data = positive.to_numpy(dtype=float)
         logs = np.log10(data)
         mean_log = float(logs.mean())
         std_log = float(logs.std(ddof=1))
@@ -93,10 +100,9 @@ class GrubbsBeckTest(StatisticalTest):
         low_threshold = 10 ** (mean_log - kn * std_log)
         high_threshold = 10 ** (mean_log + kn * std_log)
 
-        outliers = [
-            float(x) for x in data if x < low_threshold or x > high_threshold
-        ]
-        return len(outliers) == 0, outliers
+        outlier_mask = (positive < low_threshold) | (positive > high_threshold)
+        outlier_labels: list[Any] = list(positive[outlier_mask].index)
+        return len(outlier_labels) == 0, outlier_labels
 
 
 class KruskalWallisTest(StatisticalTest):
@@ -126,40 +132,30 @@ class KruskalWallisTest(StatisticalTest):
         self.k = k
         self.alpha = alpha
 
-    def run(self, timeseries: list[float]) -> tuple[bool, list[float]]:
-        data = list(timeseries)
-        if len(data) < self.k:
+    def _split_groups(self, values: list[float]) -> list[list[float]]:
+        n = len(values)
+        base, remainder = divmod(n, self.k)
+        groups: list[list[float]] = []
+        start = 0
+        for i in range(self.k):
+            end = start + base + (1 if i < remainder else 0)
+            groups.append(values[start:end])
+            start = end
+        return groups
+
+    def run(self, timeseries: pd.Series) -> tuple[bool, list[Any]]:
+        values = timeseries.to_list()
+        if len(values) < self.k:
             raise ValueError(
-                f"Need at least {self.k} values to form {self.k} groups, "
-                f"got {len(data)}"
+                f"Need at least {self.k} values to form {self.k} groups, got {len(values)}"
             )
+        _, p_value = stats.kruskal(*self._split_groups(values))
+        return float(p_value) >= self.alpha, []
 
-        n = len(data)
-        # Split into k groups as evenly as possible
-        base, remainder = divmod(n, self.k)
-        groups: list[list[float]] = []
-        start = 0
-        for i in range(self.k):
-            end = start + base + (1 if i < remainder else 0)
-            groups.append(data[start:end])
-            start = end
-
-        _, p_value = stats.kruskal(*groups)
-        passed = float(p_value) >= self.alpha
-        return passed, []
-
-    def last_p_value(self, timeseries: list[float]) -> float:
+    def last_p_value(self, timeseries: pd.Series) -> float:
         """Return the p-value for the last run (convenience helper)."""
-        data = list(timeseries)
-        n = len(data)
-        base, remainder = divmod(n, self.k)
-        groups: list[list[float]] = []
-        start = 0
-        for i in range(self.k):
-            end = start + base + (1 if i < remainder else 0)
-            groups.append(data[start:end])
-            start = end
-        _, p_value = stats.kruskal(*groups)
+        values = timeseries.to_list()
+        _, p_value = stats.kruskal(*self._split_groups(values))
         return float(p_value)
 
 
@@ -193,9 +189,10 @@ class WaldWolfowitzRunsTest(StatisticalTest):
         self.alpha = alpha
         self.p_value: float = float("nan")
 
-    def run(self, timeseries: list[float]) -> tuple[bool, list[float]]:
-        median = float(np.median(timeseries))
-        signs = [1 if x > median else -1 for x in timeseries if x != median]
+    def run(self, timeseries: pd.Series) -> tuple[bool, list[Any]]:
+        values = timeseries.to_list()
+        median = float(np.median(values))
+        signs = [1 if x > median else -1 for x in values if x != median]
 
         if len(signs) < 2:
             raise ValueError("Not enough non-tie values to run the test")
@@ -204,9 +201,7 @@ class WaldWolfowitzRunsTest(StatisticalTest):
         n2 = signs.count(-1)
         n = n1 + n2
 
-        runs = 1 + sum(
-            1 for i in range(1, len(signs)) if signs[i] != signs[i - 1]
-        )
+        runs = 1 + sum(1 for i in range(1, len(signs)) if signs[i] != signs[i - 1])
 
         e_r = 2 * n1 * n2 / n + 1
         var_r = 2 * n1 * n2 * (2 * n1 * n2 - n) / (n * n * (n - 1))
@@ -245,17 +240,13 @@ class MannKendallTest(StatisticalTest):
         self.alpha = alpha
         self.p_value: float = float("nan")
 
-    def run(self, timeseries: list[float]) -> tuple[bool, list[float]]:
-        x = list(timeseries)
+    def run(self, timeseries: pd.Series) -> tuple[bool, list[Any]]:
+        x = timeseries.to_list()
         n = len(x)
         if n < 3:
             raise ValueError(f"Need at least 3 values, got {n}")
 
-        s = sum(
-            int(np.sign(x[j] - x[i]))
-            for i in range(n - 1)
-            for j in range(i + 1, n)
-        )
+        s = sum(int(np.sign(x[j] - x[i])) for i in range(n - 1) for j in range(i + 1, n))
 
         var_s = n * (n - 1) * (2 * n + 5) / 18
         if s > 0:
@@ -295,12 +286,13 @@ class SpearmanRankTest(StatisticalTest):
         self.p_value: float = float("nan")
         self.correlation: float = float("nan")
 
-    def run(self, timeseries: list[float]) -> tuple[bool, list[float]]:
-        n = len(timeseries)
+    def run(self, timeseries: pd.Series) -> tuple[bool, list[Any]]:
+        values = timeseries.to_list()
+        n = len(values)
         if n < 3:
             raise ValueError(f"Need at least 3 values, got {n}")
 
-        rho, p = stats.spearmanr(timeseries, range(n))
+        rho, p = stats.spearmanr(values, range(n))
         self.correlation = float(rho)
         self.p_value = float(p)
         return self.p_value >= self.alpha, []

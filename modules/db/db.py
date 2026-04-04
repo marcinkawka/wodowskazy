@@ -19,8 +19,16 @@ class Database:
                 station_name  VARCHAR,
                 river_name    VARCHAR,
                 lat           DOUBLE,
-                lon           DOUBLE
+                lon           DOUBLE,
+                uuid          UUID DEFAULT gen_random_uuid()
             )
+        """)
+        # Migration: add uuid to existing databases that predate this column.
+        self.con.execute("""
+            ALTER TABLE gauges_list ADD COLUMN IF NOT EXISTS uuid UUID
+        """)
+        self.con.execute("""
+            UPDATE gauges_list SET uuid = gen_random_uuid() WHERE uuid IS NULL
         """)
         self.con.execute("""
             CREATE TABLE IF NOT EXISTS measurements (

@@ -16,6 +16,8 @@ Usage
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from modules.db import Database
 from modules.stat_tests import (
     GrubbsBeckTest,
@@ -40,7 +42,7 @@ SPEARMAN_RANK_TEST_ID = 6
 SERIES_TYPE = "WQ_annual"
 
 
-def fetch_wq(db: Database, station_code: str) -> tuple[list[int], list[float]]:
+def fetch_wq(db: Database, station_code: str) -> pd.Series:
     rows = db.con.execute(
         "SELECT hydro_year, WQ FROM stats_annual"
         " WHERE station_code = ? AND WQ IS NOT NULL"
@@ -49,7 +51,7 @@ def fetch_wq(db: Database, station_code: str) -> tuple[list[int], list[float]]:
     ).fetchall()
     years = [r[0] for r in rows]
     values = [r[1] for r in rows]
-    return years, values
+    return pd.Series(values, index=years, name="WQ")
 
 
 def insert_result(
@@ -62,118 +64,139 @@ def insert_result(
     notes: str,
     result: bool,
 ) -> None:
-    next_id = db.con.execute(
-        "SELECT nextval('stat_test_results_id_seq')"
-    ).fetchone()[0]
+    next_id = db.con.execute("SELECT nextval('stat_test_results_id_seq')").fetchone()[0]
     db.con.execute(
         "INSERT INTO stat_test_results"
         " (id, series_type, station_code, test_id,"
         "  period_start, period_end, result_notes, result)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [next_id, series_type, station_code, test_id,
-         period_start, period_end, notes, result],
+        [next_id, series_type, station_code, test_id, period_start, period_end, notes, result],
     )
 
 
 def run_grubbs_beck(db: Database, station_code: str, label: str) -> None:
-    years, values = fetch_wq(db, station_code)
-    if not values:
+    series = fetch_wq(db, station_code)
+    if series.empty:
         print(f"  WARNING: no WQ data for {label}, skipping Grubbs-Beck.")
         return
 
     test = GrubbsBeckTest(alpha=0.10)
-    passed, outliers = test.run(values)
+    passed, outlier_labels = test.run(series)
 
     if passed:
-        notes = f"No outliers (n={len(values)}, α=10%)"
+        notes = f"No outliers (n={len(series)}, α=10%)"  # noqa: RUF001
     else:
-        outlier_str = ", ".join(f"{v:.1f}" for v in sorted(outliers))
-        notes = f"Outliers detected (n={len(values)}, α=10%): {outlier_str} m³/s"
+        outlier_str = ", ".join(f"{yr}: {series[yr]:.1f}" for yr in sorted(outlier_labels))
+        notes = f"Outliers detected (n={len(series)}, α=10%): {outlier_str} m³/s"  # noqa: RUF001
 
     insert_result(
-        db, SERIES_TYPE, station_code, GRUBBS_BECK_TEST_ID,
-        years[0], years[-1], notes, passed,
+        db,
+        SERIES_TYPE,
+        station_code,
+        GRUBBS_BECK_TEST_ID,
+        int(series.index[0]),
+        int(series.index[-1]),
+        notes,
+        passed,
     )
     status = "PASSED" if passed else "FAILED"
     print(f"  Grubbs-Beck  [{status}]  {notes}")
 
 
 def run_kruskal_wallis(db: Database, station_code: str, label: str) -> None:
-    years, values = fetch_wq(db, station_code)
-    if not values:
+    series = fetch_wq(db, station_code)
+    if series.empty:
         print(f"  WARNING: no WQ data for {label}, skipping Kruskal-Wallis.")
         return
 
     test = KruskalWallisTest(k=2, alpha=0.05)
-    passed, _ = test.run(values)
-    p_value = test.last_p_value(values)
+    passed, _ = test.run(series)
+    p_value = test.last_p_value(series)
 
-    mid = len(values) // 2
-    split_year = years[mid]
-    notes = (
-        f"k=2 groups split at {split_year}"
-        f" (n={len(values)}, α=5%, p={p_value:.4f})"
-    )
+    split_year = series.index[len(series) // 2]
+    notes = f"k=2 groups split at {split_year} (n={len(series)}, α=5%, p={p_value:.4f})"  # noqa: RUF001
 
     insert_result(
-        db, SERIES_TYPE, station_code, KRUSKAL_WALLIS_TEST_ID,
-        years[0], years[-1], notes, passed,
+        db,
+        SERIES_TYPE,
+        station_code,
+        KRUSKAL_WALLIS_TEST_ID,
+        int(series.index[0]),
+        int(series.index[-1]),
+        notes,
+        passed,
     )
     status = "PASSED" if passed else "FAILED"
     print(f"  Kruskal-Wallis [{status}]  {notes}")
 
 
 def run_wald_wolfowitz(db: Database, station_code: str, label: str) -> None:
-    years, values = fetch_wq(db, station_code)
-    if not values:
+    series = fetch_wq(db, station_code)
+    if series.empty:
         print(f"  WARNING: no WQ data for {label}, skipping Wald-Wolfowitz.")
         return
 
     test = WaldWolfowitzRunsTest(alpha=0.05)
-    passed, _ = test.run(values)
-    notes = f"n={len(values)}, α=5%, p={test.p_value:.4f}"
+    passed, _ = test.run(series)
+    notes = f"n={len(series)}, α=5%, p={test.p_value:.4f}"  # noqa: RUF001
 
     insert_result(
-        db, SERIES_TYPE, station_code, WALD_WOLFOWITZ_TEST_ID,
-        years[0], years[-1], notes, passed,
+        db,
+        SERIES_TYPE,
+        station_code,
+        WALD_WOLFOWITZ_TEST_ID,
+        int(series.index[0]),
+        int(series.index[-1]),
+        notes,
+        passed,
     )
     status = "PASSED" if passed else "FAILED"
     print(f"  Wald-Wolfowitz [{status}]  {notes}")
 
 
 def run_mann_kendall(db: Database, station_code: str, label: str) -> None:
-    years, values = fetch_wq(db, station_code)
-    if not values:
+    series = fetch_wq(db, station_code)
+    if series.empty:
         print(f"  WARNING: no WQ data for {label}, skipping Mann-Kendall.")
         return
 
     test = MannKendallTest(alpha=0.05)
-    passed, _ = test.run(values)
-    notes = f"n={len(values)}, α=5%, p={test.p_value:.4f}"
+    passed, _ = test.run(series)
+    notes = f"n={len(series)}, α=5%, p={test.p_value:.4f}"  # noqa: RUF001
 
     insert_result(
-        db, SERIES_TYPE, station_code, MANN_KENDALL_TEST_ID,
-        years[0], years[-1], notes, passed,
+        db,
+        SERIES_TYPE,
+        station_code,
+        MANN_KENDALL_TEST_ID,
+        int(series.index[0]),
+        int(series.index[-1]),
+        notes,
+        passed,
     )
     status = "PASSED" if passed else "FAILED"
     print(f"  Mann-Kendall   [{status}]  {notes}")
 
 
 def run_spearman_rank(db: Database, station_code: str, label: str) -> None:
-    years, values = fetch_wq(db, station_code)
-    if not values:
+    series = fetch_wq(db, station_code)
+    if series.empty:
         print(f"  WARNING: no WQ data for {label}, skipping Spearman.")
         return
 
     test = SpearmanRankTest(alpha=0.05)
-    passed, _ = test.run(values)
-    notes = (
-        f"ρ={test.correlation:.4f}, n={len(values)}, α=5%, p={test.p_value:.4f}"
-    )
+    passed, _ = test.run(series)
+    notes = f"ρ={test.correlation:.4f}, n={len(series)}, α=5%, p={test.p_value:.4f}"  # noqa: RUF001
 
     insert_result(
-        db, SERIES_TYPE, station_code, SPEARMAN_RANK_TEST_ID,
-        years[0], years[-1], notes, passed,
+        db,
+        SERIES_TYPE,
+        station_code,
+        SPEARMAN_RANK_TEST_ID,
+        int(series.index[0]),
+        int(series.index[-1]),
+        notes,
+        passed,
     )
     status = "PASSED" if passed else "FAILED"
     print(f"  Spearman       [{status}]  {notes}")

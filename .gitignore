@@ -29,5 +29,5 @@ Thumbs.db
 # Environment
 .env
 .env.local
-*.zip 
+*.zip
 incoming_data/
