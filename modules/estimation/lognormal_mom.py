@@ -41,9 +41,7 @@ class LogNormalMoM(DischargeEstimator):
     def fit(self, timeseries: pd.Series) -> None:
         positive = timeseries[timeseries > 0]
         if len(positive) < 3:
-            raise ValueError(
-                f"Need at least 3 positive values, got {len(positive)}"
-            )
+            raise ValueError(f"Need at least 3 positive values, got {len(positive)}")
         log_values = np.log(positive.to_numpy(dtype=float))
         self._mu = float(log_values.mean())
         self._sigma = float(log_values.std(ddof=1))

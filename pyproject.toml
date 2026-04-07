@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
     "duckdb>=1.5.1",
+    "matplotlib>=3.10.0",
     "numpy>=2.4.3",
     "pandas>=3.0.1",
     "scipy>=1.17.1",
@@ -30,8 +31,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Mathematical docstrings use intentional Unicode (Greek letters, minus sign).
+# Mathematical docstrings/comments/strings use intentional Unicode (Greek letters, minus sign).
 "modules/stat_tests.py" = ["RUF002"]
+"modules/plotting.py" = ["RUF001", "RUF002", "RUF003"]
+"modules/estimation/lognormal_mom.py" = ["RUF002"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["modules"]

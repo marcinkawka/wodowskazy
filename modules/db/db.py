@@ -231,6 +231,20 @@ class Database:
         """)
 
         self.con.execute("""
+            CREATE TABLE IF NOT EXISTS fitted_distributions (
+                id                    INTEGER PRIMARY KEY,
+                estimation_method_id  INTEGER  NOT NULL REFERENCES estimation_methods(id),
+                distribution_id       INTEGER  NOT NULL REFERENCES distributions(id),
+                frequency_id          INTEGER  NOT NULL REFERENCES frequencies(id),
+                distribution_params   JSON     NOT NULL,
+                station_code          VARCHAR  NOT NULL REFERENCES gauges_list(station_code),
+                source_timeseries_info JSON    NOT NULL
+            )
+        """)
+        self.con.execute("""
+            CREATE SEQUENCE IF NOT EXISTS fitted_distributions_id_seq START 1
+        """)
+        self.con.execute("""
             CREATE TABLE IF NOT EXISTS estimated_discharges (
                 id                   INTEGER PRIMARY KEY,
                 station_code         VARCHAR  NOT NULL REFERENCES gauges_list(station_code),

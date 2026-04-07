@@ -7,6 +7,7 @@ Stations tested
 ---------------
   DĘBLIN   — Wisła,        station_code 151210120
   KŁODZKO  — Nysa Kłodzka, station_code 150160180
+  WARSZAWA — Wisła,        station_code 152210010
 
 Usage
 -----
@@ -32,6 +33,7 @@ DB_PATH = Path(__file__).parent / "hydro.duckdb"
 STATIONS = [
     ("151210120", "DĘBLIN", "Wisła"),
     ("150160180", "KŁODZKO", "Nysa Kłodzka"),
+    ("152210010", "WARSZAWA", "Wisła"),
 ]
 
 GRUBBS_BECK_TEST_ID = 1
