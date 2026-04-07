@@ -33,3 +33,5 @@ Thumbs.db
 incoming_data/
 TODO.md
 scripts/imgw_dobowe/
+output/
+*.csv
