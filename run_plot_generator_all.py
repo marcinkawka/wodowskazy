@@ -23,6 +23,7 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from modules.db import Database
@@ -72,6 +73,19 @@ def fetch_fitted_params(db: Database, station_code: str) -> dict | None:
         "SELECT distribution_params FROM fitted_distributions"
         " WHERE station_code = ? AND frequency_id = ?"
         " ORDER BY id DESC LIMIT 1",
+        [station_code, FREQUENCY_ID],
+    ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row[0])
+
+
+def fetch_ci(db: Database, station_code: str) -> dict | None:
+    row = db.con.execute(
+        "SELECT c.ci_data FROM ci_estimates c"
+        " JOIN fitted_distributions fd ON c.fitted_distribution_id = fd.id"
+        " WHERE fd.station_code = ? AND fd.frequency_id = ?"
+        " ORDER BY fd.id DESC LIMIT 1",
         [station_code, FREQUENCY_ID],
     ).fetchone()
     if row is None:
@@ -134,6 +148,7 @@ def main() -> None:
 
     db = Database(str(DB_PATH))
     db.create_schema()  # ensures uuid column exists (migration-safe)
+    db.create_frequency_analysis_schema()  # ensures ci_estimates table exists
 
     stations = fetch_stations(db)
     print(f"Found {len(stations)} stations with WQ series > {MIN_YEARS} years.\n")
@@ -157,6 +172,7 @@ def main() -> None:
             skipped += 1
             continue
 
+        ci = fetch_ci(db, station_code)
         output_path = probability_plot(
             station_code=station_code,
             station_name=station_name,
@@ -166,6 +182,10 @@ def main() -> None:
             mu_log=params["mu_log"],
             sigma_log=params["sigma_log"],
             output_dir=OUTPUT_DIR,
+            ci_lower=np.array(ci["q_lower"]) if ci else None,
+            ci_upper=np.array(ci["q_upper"]) if ci else None,
+            ci_p_grid=np.array(ci["probabilities"]) if ci else None,
+            ci_alpha=float(ci["alpha"]) if ci else 0.1,
         )
         print(f"→ {output_path.name}")
 

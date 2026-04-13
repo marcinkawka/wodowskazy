@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from modules.db import Database
-from modules.estimation import LogNormalMoM
+from modules.estimation import BootstrapCI, LogNormalMoM
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"
 
@@ -65,7 +65,7 @@ def insert_fitted_distribution(
     station_code: str,
     estimator: LogNormalMoM,
     series: pd.Series,
-) -> None:
+) -> int:
     source_info = {
         "station_code": station_code,
         "frequency_id": FREQUENCY_ID,
@@ -87,6 +87,22 @@ def insert_fitted_distribution(
             json.dumps(estimator.fitted_params()),
             station_code,
             json.dumps(source_info),
+        ],
+    )
+    return int(next_id)
+
+
+def insert_ci_estimate(db: Database, fitted_distribution_id: int, ci_result: dict) -> None:  # type: ignore[type-arg]
+    next_id = db.con.execute("SELECT nextval('ci_estimates_id_seq')").fetchone()[0]
+    db.con.execute(
+        "INSERT INTO ci_estimates (id, fitted_distribution_id, alpha, n_bootstrap, ci_data)"
+        " VALUES (?, ?, ?, ?, ?)",
+        [
+            next_id,
+            fitted_distribution_id,
+            ci_result["alpha"],
+            ci_result["n_bootstrap"],
+            json.dumps(ci_result),
         ],
     )
 
@@ -139,12 +155,16 @@ def run_station(db: Database, station_code: str, label: str) -> None:
         f"sigma_log={params['sigma_log']:.4f}"
     )
 
-    insert_fitted_distribution(db, station_code, estimator, series)
+    fitted_id = insert_fitted_distribution(db, station_code, estimator, series)
 
     for t in RETURN_PERIODS:
         q = estimator.estimate(t)
         insert_estimate(db, station_code, t, estimator, q)
         print(f"    Q_{t:<4d} = {q:.1f} m³/s")
+
+    ci_result = BootstrapCI(n_samples=5000, alpha=0.1).compute(series, LogNormalMoM)
+    insert_ci_estimate(db, fitted_id, ci_result)
+    print(f"    CI (90%, bootstrap n={ci_result['n_valid']}) stored.")
 
 
 def main() -> None:

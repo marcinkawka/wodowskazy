@@ -25,6 +25,7 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from modules.db import Database
@@ -66,6 +67,19 @@ def fetch_fitted_params(db: Database, station_code: str) -> dict | None:
     return json.loads(row[0])
 
 
+def fetch_ci(db: Database, station_code: str) -> dict | None:
+    row = db.con.execute(
+        "SELECT c.ci_data FROM ci_estimates c"
+        " JOIN fitted_distributions fd ON c.fitted_distribution_id = fd.id"
+        " WHERE fd.station_code = ? AND fd.frequency_id = ?"
+        " ORDER BY fd.id DESC LIMIT 1",
+        [station_code, FREQUENCY_ID],
+    ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row[0])
+
+
 def fetch_uuid(db: Database, station_code: str) -> str | None:
     row = db.con.execute(
         "SELECT uuid FROM gauges_list WHERE station_code = ?",
@@ -98,6 +112,12 @@ def run_station(
         print(f"  WARNING: station {station_code} not found in gauges_list.")
         return
 
+    ci = fetch_ci(db, station_code)
+    ci_lower = np.array(ci["q_lower"]) if ci else None
+    ci_upper = np.array(ci["q_upper"]) if ci else None
+    ci_p_grid = np.array(ci["probabilities"]) if ci else None
+    ci_alpha = float(ci["alpha"]) if ci else 0.1
+
     output_path = probability_plot(
         station_code=station_code,
         station_name=station_name,
@@ -107,6 +127,10 @@ def run_station(
         mu_log=params["mu_log"],
         sigma_log=params["sigma_log"],
         output_dir=OUTPUT_DIR,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        ci_p_grid=ci_p_grid,
+        ci_alpha=ci_alpha,
     )
     print(f"  Saved → {output_path}")
 
@@ -121,6 +145,7 @@ def main() -> None:
 
     db = Database(str(DB_PATH))
     db.create_schema()  # ensures uuid column exists (migration-safe)
+    db.create_frequency_analysis_schema()  # ensures fitted_distributions table exists
 
     for station_code, station_name, river_name in STATIONS:
         print(f"\n{station_name} ({river_name})")
