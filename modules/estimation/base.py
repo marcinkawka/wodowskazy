@@ -15,6 +15,7 @@ The distribution_id and estimation_method_id class attributes map to the
 
 from abc import ABC, abstractmethod
 
+import numpy as np
 import pandas as pd
 
 
@@ -65,5 +66,22 @@ class DischargeEstimator(ABC):
 
         Used to populate the `notes` JSON column in estimated_discharges.
         fit() must have been called first.
+        """
+        ...
+
+    @abstractmethod
+    def quantile_curve(self, p_grid: np.ndarray) -> np.ndarray:
+        """
+        Return discharge Q [m³/s] for each exceedance probability in p_grid.
+
+        Parameters
+        ----------
+        p_grid : np.ndarray
+            Exceedance probabilities in (0, 1).  fit() must have been called first.
+
+        Returns
+        -------
+        np.ndarray
+            Discharge estimates, same shape as p_grid.
         """
         ...

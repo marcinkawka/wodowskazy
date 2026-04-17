@@ -55,6 +55,10 @@ def probability_plot(
     mu_log: float,
     sigma_log: float,
     output_dir: Path,
+    ci_lower: np.ndarray | None = None,
+    ci_upper: np.ndarray | None = None,
+    ci_p_grid: np.ndarray | None = None,
+    ci_alpha: float = 0.1,
 ) -> Path:
     """
     Generate a Log-Normal probability plot and save it as a PNG.
@@ -77,6 +81,16 @@ def probability_plot(
         Fitted Log-Normal parameter σ = std(ln Q).
     output_dir : Path
         Directory to save the PNG; created if it does not exist.
+    ci_lower : np.ndarray or None
+        Lower bound of the confidence interval on the theoretical curve,
+        aligned with ``ci_p_grid``.
+    ci_upper : np.ndarray or None
+        Upper bound of the confidence interval on the theoretical curve,
+        aligned with ``ci_p_grid``.
+    ci_p_grid : np.ndarray or None
+        Exceedance probabilities (0–1) corresponding to ``ci_lower``/``ci_upper``.
+    ci_alpha : float
+        Significance level; used in the legend label (default 0.10 → 90% CI).
 
     Returns
     -------
@@ -126,6 +140,20 @@ def probability_plot(
         label=f"Log-Normal (MoM):  μ={mu_log:.3f},  σ={sigma_log:.3f}",
         zorder=2,
     )
+
+    # Confidence band
+    if ci_lower is not None and ci_upper is not None and ci_p_grid is not None:
+        z_ci = stats.norm.ppf(ci_p_grid)
+        ci_pct = int(round((1 - ci_alpha) * 100))
+        ax.fill_between(
+            z_ci,
+            ci_lower,
+            ci_upper,
+            alpha=0.20,
+            color="firebrick",
+            label=f"{ci_pct}% confidence band",
+            zorder=1,
+        )
 
     # --- Vertical reference lines at 1%, 0.2%, 0.1% --------------------------
     for p_vl, lbl in zip(_V_LINE_PROBS, _V_LINE_LABELS, strict=False):

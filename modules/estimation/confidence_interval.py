@@ -9,7 +9,7 @@ bootstrap procedure:
   2. Fits a fresh estimator instance to each resample.
   3. Evaluates the Q(p) curve at every probability in ``p_grid`` via
      ``DischargeEstimator.quantile_curve()``.
-  4. Returns the alpha/2 and (1−alpha/2) quantile bands across all
+  4. Returns the alpha/2 and (1-alpha/2) quantile bands across all
      successfully fitted resamples.
 
 The result dict is intended to be serialised directly to JSON and stored in
@@ -41,7 +41,7 @@ class BootstrapCI:
             Number of bootstrap resamples.  Default: 5000.
         alpha : float
             Two-sided significance level.  The CI spans the
-            [alpha/2, 1−alpha/2] quantile range.  Default: 0.1 (90 % CI).
+            [alpha/2, 1-alpha/2] quantile range.  Default: 0.1 (90 % CI).
         """
         if not 0 < alpha < 1:
             raise ValueError(f"alpha must be in (0, 1), got {alpha}")
@@ -74,7 +74,7 @@ class BootstrapCI:
         dict with keys:
             probabilities  list[float]   — p_grid echoed back
             q_lower        list[float]   — alpha/2 quantile band
-            q_upper        list[float]   — (1−alpha/2) quantile band
+            q_upper        list[float]   — (1-alpha/2) quantile band
             alpha          float         — significance level used
             n_bootstrap    int           — n_samples requested
             n_valid        int           — resamples that converged

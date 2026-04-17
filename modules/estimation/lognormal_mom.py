@@ -60,3 +60,9 @@ class LogNormalMoM(DischargeEstimator):
         if math.isnan(self._mu):
             raise RuntimeError("fit() must be called before fitted_params()")
         return {"mu_log": self._mu, "sigma_log": self._sigma, "n": float(self._n)}
+
+    def quantile_curve(self, p_grid: np.ndarray) -> np.ndarray:
+        if math.isnan(self._mu):
+            raise RuntimeError("fit() must be called before quantile_curve()")
+        z = stats.norm.ppf(1.0 - p_grid)
+        return np.exp(self._mu + self._sigma * z)

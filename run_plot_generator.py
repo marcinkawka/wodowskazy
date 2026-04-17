@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from modules.db import Database
+from modules.db import DuckDatabase as Database
 from modules.plotting import probability_plot
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"

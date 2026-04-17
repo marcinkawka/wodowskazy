@@ -23,7 +23,7 @@ Tables produced:
 import sys
 from pathlib import Path
 
-from modules.db import Database
+from modules.db import DuckDatabase as Database
 from modules.db.stats_repository import StatsRepository
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"

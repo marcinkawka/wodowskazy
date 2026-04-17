@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from modules.db import Database
+from modules.db import DuckDatabase as Database
 from modules.estimation import BootstrapCI, LogNormalMoM
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"

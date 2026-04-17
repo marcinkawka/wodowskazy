@@ -8,6 +8,8 @@ dependencies = [
     "matplotlib>=3.10.0",
     "numpy>=2.4.3",
     "pandas>=3.0.1",
+    "psycopg2-binary>=2.9.11",
+    "python-dotenv>=1.2.2",
     "scipy>=1.17.1",
 ]
 

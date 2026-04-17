@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from modules.db import Database
+from modules.db import DuckDatabase as Database
 from modules.stat_tests import (
     GrubbsBeckTest,
     KruskalWallisTest,

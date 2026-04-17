@@ -12,7 +12,7 @@ Pass --all to process all available files.
 import sys
 from pathlib import Path
 
-from modules.db import Database
+from modules.db import DuckDatabase as Database
 from modules.db.repository import (
     GaugeRepository,
     MeasurementRepository,
