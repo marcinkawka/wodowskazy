@@ -3,17 +3,19 @@
 Run Grubbs-Beck outlier test and Kruskal-Wallis stationarity test on annual
 maximum flows (WQ) for selected stations and persist results to the database.
 
-Stations tested
----------------
+Stations tested (default)
+-------------------------
   DĘBLIN   — Wisła,        station_code 151210120
   KŁODZKO  — Nysa Kłodzka, station_code 150160180
   WARSZAWA — Wisła,        station_code 152210010
 
 Usage
 -----
-    uv run run_stat_tests.py
+    uv run run_stat_tests.py           # 3 example stations
+    uv run run_stat_tests.py --all     # all stations with WQ series > 30 years
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from modules.stat_tests import (
 )
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"
+MIN_YEARS = 30
 
 STATIONS = [
     ("151210120", "DĘBLIN", "Wisła"),
@@ -42,6 +45,26 @@ WALD_WOLFOWITZ_TEST_ID = 4
 MANN_KENDALL_TEST_ID = 5
 SPEARMAN_RANK_TEST_ID = 6
 SERIES_TYPE = "WQ_annual"
+
+
+def fetch_all_stations(db: Database) -> list[tuple[str, str, str]]:
+    """Return all stations with more than MIN_YEARS non-null WQ observations."""
+    rows = db.con.execute(
+        """
+        SELECT g.station_code, g.station_name, g.river_name
+        FROM gauges_list g
+        JOIN (
+            SELECT station_code
+            FROM stats_annual
+            WHERE WQ IS NOT NULL
+            GROUP BY station_code
+            HAVING COUNT(*) > ?
+        ) t ON g.station_code = t.station_code
+        ORDER BY g.station_name
+        """,
+        [MIN_YEARS],
+    ).fetchall()
+    return [(r[0], r[1], r[2]) for r in rows]
 
 
 def fetch_wq(db: Database, station_code: str) -> pd.Series:
@@ -205,6 +228,14 @@ def run_spearman_rank(db: Database, station_code: str, label: str) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run statistical tests on annual WQ series.")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=f"Run for all stations with WQ series > {MIN_YEARS} years (default: 3 example stations).",  # noqa: E501
+    )
+    args = parser.parse_args()
+
     if not DB_PATH.exists():
         print(
             f"ERROR: {DB_PATH} not found. Run raw_data_parser.py first.",
@@ -215,8 +246,15 @@ def main() -> None:
     db = Database(str(DB_PATH))
     db.create_stat_tests_schema()
 
-    for station_code, station_name, river_name in STATIONS:
-        print(f"\n{station_name} ({river_name})")
+    if args.all:
+        stations = fetch_all_stations(db)
+        print(f"Found {len(stations)} stations with WQ series > {MIN_YEARS} years.\n")
+    else:
+        stations = STATIONS
+
+    for i, (station_code, station_name, river_name) in enumerate(stations, 1):
+        prefix = f"[{i}/{len(stations)}] " if args.all else ""
+        print(f"\n{prefix}{station_name} ({river_name})")
         run_grubbs_beck(db, station_code, station_name)
         run_kruskal_wallis(db, station_code, station_name)
         run_wald_wolfowitz(db, station_code, station_name)
