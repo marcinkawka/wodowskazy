@@ -174,6 +174,28 @@ class DuckDatabase(Database):
             CREATE INDEX IF NOT EXISTS idx_stats_annual_station
             ON stats_annual (station_code)
         """)
+        self.con.execute("CREATE TYPE IF NOT EXISTS hydro_season AS ENUM ('winter', 'summer')")
+        self.con.execute("""
+            CREATE OR REPLACE TABLE stats_seasonal (
+                station_code  VARCHAR      NOT NULL,
+                hydro_year    INTEGER      NOT NULL,
+                season        hydro_season NOT NULL,
+                NQ            DOUBLE,
+                SQ            DOUBLE,
+                ZQ            DOUBLE,
+                WQ            DOUBLE,
+                NW            DOUBLE,
+                SW            DOUBLE,
+                ZW            DOUBLE,
+                WW            DOUBLE,
+                mes_count     INTEGER      NOT NULL,
+                PRIMARY KEY (station_code, hydro_year, season)
+            )
+        """)
+        self.con.execute("""
+            CREATE INDEX IF NOT EXISTS idx_stats_seasonal_station
+            ON stats_seasonal (station_code)
+        """)
         self.con.execute("""
             CREATE OR REPLACE TABLE stats_alltime (
                 station_code  VARCHAR PRIMARY KEY,

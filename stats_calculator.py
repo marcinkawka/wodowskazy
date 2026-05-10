@@ -17,6 +17,7 @@ IMGW notation:
 Tables produced:
     stats_monthly   — NQ SQ ZQ WQ  NW SW ZW WW  per station / calendar year+month
     stats_annual    — same per station / hydrological year
+    stats_seasonal  — same per station / hydrological year / season (winter|summer)
     stats_alltime   — NNQ WWQ SWQ SNQ SSQ  per station (derived from monthly)
 """
 
@@ -56,6 +57,10 @@ def main() -> None:
 
     print("Computing annual statistics  ...", end=" ", flush=True)
     n = stats.compute_annual()
+    print(f"{n:,} rows")
+
+    print("Computing seasonal statistics...", end=" ", flush=True)
+    n = stats.compute_seasonal()
     print(f"{n:,} rows")
 
     print("Computing all-time statistics...", end=" ", flush=True)
