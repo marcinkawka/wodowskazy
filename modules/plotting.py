@@ -32,6 +32,9 @@ _P_LABELS = ["0.1%", "0.5%", "1%", "2%", "5%", "10%", "20%", "50%", "80%", "90%"
 _V_LINE_PROBS = [0.01, 0.002, 0.001]  # 1%, 0.2%, 0.1%
 _V_LINE_LABELS = ["p=1%\n(T=100)", "p=0.2%\n(T=500)", "p=0.1%\n(T=1000)"]
 
+# Color cycle for theoretical curves (index = position in fits list)
+_CURVE_COLORS = ["firebrick", "darkorange", "forestgreen", "purple", "saddlebrown"]
+
 
 def _mean_rank_exceedance(n: int) -> np.ndarray:
     """
@@ -46,74 +49,120 @@ def _mean_rank_exceedance(n: int) -> np.ndarray:
     return (n - ranks + 0.5) / n
 
 
-def probability_plot(
+def _plot_lognormal_curve(
+    ax: plt.Axes,
+    params: dict,
+    ci: dict | None,
+    color: str,
+) -> None:
+    """Add a Log-Normal theoretical curve and optional CI band to *ax*."""
+    mu_log: float = params["mu_log"]
+    sigma_log: float = params["sigma_log"]
+
+    p_curve = np.linspace(0.0005, 0.9995, 1000)
+    z_curve = stats.norm.ppf(p_curve)
+    q_curve = np.exp(mu_log - sigma_log * z_curve)
+
+    ax.plot(
+        z_curve,
+        q_curve,
+        linestyle="-",
+        linewidth=2.0,
+        color=color,
+        label=f"Log-Normal (MoM):  μ={mu_log:.3f},  σ={sigma_log:.3f}",
+        zorder=2,
+    )
+
+    if ci:
+        z_ci = stats.norm.ppf(np.array(ci["probabilities"]))
+        ci_pct = round((1 - float(ci["alpha"])) * 100)
+        ax.fill_between(
+            z_ci,
+            np.array(ci["q_lower"]),
+            np.array(ci["q_upper"]),
+            alpha=0.20,
+            color=color,
+            label=f"{ci_pct}% CI (Log-Normal)",
+            zorder=1,
+        )
+
+
+def _plot_pearsoniii_curve(
+    ax: plt.Axes,
+    params: dict,
+    ci: dict | None,
+    color: str,
+) -> None:
+    """Add a Pearson III theoretical curve and optional CI band to *ax*."""
+    epsilon: float = params["epsilon"]
+    lam: float = params["lambda"]
+    alpha: float = params["alpha"]
+
+    p_curve = np.linspace(0.0005, 0.9995, 1000)
+    z_curve = stats.norm.ppf(p_curve)
+    q_curve = epsilon + stats.gamma.ppf(1.0 - p_curve, a=lam, scale=1.0 / alpha)
+
+    ax.plot(
+        z_curve,
+        q_curve,
+        linestyle="-",
+        linewidth=2.0,
+        color=color,
+        label=f"Pearson III (MLE):  ε={epsilon:.3f},  λ={lam:.3f},  α={alpha:.3f}",
+        zorder=2,
+    )
+
+    if ci:
+        z_ci = stats.norm.ppf(np.array(ci["probabilities"]))
+        ci_pct = round((1 - float(ci["alpha"])) * 100)
+        ax.fill_between(
+            z_ci,
+            np.array(ci["q_lower"]),
+            np.array(ci["q_upper"]),
+            alpha=0.20,
+            color=color,
+            label=f"{ci_pct}% CI (Pearson III)",
+            zorder=1,
+        )
+
+
+def plot_distribution(
     station_code: str,
     station_name: str,
     river_name: str,
     uuid: str,
     wq_series: pd.Series,
-    mu_log: float,
-    sigma_log: float,
+    fits: list[dict],
     output_dir: Path,
-    ci_lower: np.ndarray | None = None,
-    ci_upper: np.ndarray | None = None,
-    ci_p_grid: np.ndarray | None = None,
-    ci_alpha: float = 0.1,
 ) -> Path:
     """
-    Generate a Log-Normal probability plot and save it as a PNG.
+    Generate a probability plot with one theoretical curve per entry in *fits*.
+
+    All distributions share a single canvas so their quantile lines can be
+    compared directly against the empirical data.
 
     Parameters
     ----------
-    station_code : str
-        IMGW station code — shown in the title.
-    station_name : str
-        Human-readable station name — shown in the title.
-    river_name : str
-        River name — shown in the title.
-    uuid : str
-        Station UUID from ``gauges_list``; used as the output filename.
-    wq_series : pd.Series
-        Annual maximum flows [m³/s] indexed by hydro_year.
-    mu_log : float
-        Fitted Log-Normal parameter μ = mean(ln Q).
-    sigma_log : float
-        Fitted Log-Normal parameter σ = std(ln Q).
-    output_dir : Path
-        Directory to save the PNG; created if it does not exist.
-    ci_lower : np.ndarray or None
-        Lower bound of the confidence interval on the theoretical curve,
-        aligned with ``ci_p_grid``.
-    ci_upper : np.ndarray or None
-        Upper bound of the confidence interval on the theoretical curve,
-        aligned with ``ci_p_grid``.
-    ci_p_grid : np.ndarray or None
-        Exceedance probabilities (0–1) corresponding to ``ci_lower``/``ci_upper``.
-    ci_alpha : float
-        Significance level; used in the legend label (default 0.10 → 90% CI).
+    fits : list[dict]
+        Each entry must contain:
+          ``distribution_name`` — matches the ``distributions.name`` catalogue value
+          ``params``            — parsed ``fitted_distributions.distribution_params`` JSON
+          ``ci``                — parsed ``ci_estimates.ci_data`` JSON, or ``None``
 
     Returns
     -------
     Path
-        Full path of the saved PNG file (``output_dir / f"{uuid}.png"``).
+        Full path of the saved PNG (``output_dir / f"{uuid}.png"``).
     """
-    # --- Empirical data (index = hydro_year preserved for annotation) ----------
-    sorted_wq = wq_series.dropna().sort_values()  # ascending, index = hydro_year
+    sorted_wq = wq_series.dropna().sort_values()
     n = len(sorted_wq)
-    p_emp = _mean_rank_exceedance(n)  # Hazen exceedance probabilities
-    z_emp = stats.norm.ppf(p_emp)  # probit x-coordinates
+    p_emp = _mean_rank_exceedance(n)
+    z_emp = stats.norm.ppf(p_emp)
 
-    # WWQ: the maximum observed value and the year it occurred
     wwq_value = float(sorted_wq.iloc[-1])
     wwq_year = int(sorted_wq.index[-1])
     wwq_z = float(z_emp[-1])
 
-    # --- Theoretical Log-Normal curve -----------------------------------------
-    p_curve = np.linspace(0.0005, 0.9995, 1000)
-    z_curve = stats.norm.ppf(p_curve)
-    q_curve = np.exp(mu_log - sigma_log * z_curve)  # Q(p) = exp(μ − σ·z_p)
-
-    # --- Figure ---------------------------------------------------------------
     plt.style.use("ggplot")
     fig, ax = plt.subplots(figsize=(13, 7))
 
@@ -130,36 +179,22 @@ def probability_plot(
         zorder=3,
     )
 
-    # Theoretical: smooth lognormal curve
-    ax.plot(
-        z_curve,
-        q_curve,
-        linestyle="-",
-        linewidth=2.0,
-        color="firebrick",
-        label=f"Log-Normal (MoM):  μ={mu_log:.3f},  σ={sigma_log:.3f}",
-        zorder=2,
-    )
+    # Theoretical curves — one per fit
+    for i, fit in enumerate(fits):
+        dist_name: str = fit["distribution_name"]
+        color = _CURVE_COLORS[i % len(_CURVE_COLORS)]
 
-    # Confidence band
-    if ci_lower is not None and ci_upper is not None and ci_p_grid is not None:
-        z_ci = stats.norm.ppf(ci_p_grid)
-        ci_pct = int(round((1 - ci_alpha) * 100))
-        ax.fill_between(
-            z_ci,
-            ci_lower,
-            ci_upper,
-            alpha=0.20,
-            color="firebrick",
-            label=f"{ci_pct}% confidence band",
-            zorder=1,
-        )
+        if dist_name == "Log-Normal":
+            _plot_lognormal_curve(ax, fit["params"], fit.get("ci"), color)
+        elif dist_name == "Pearson III":
+            _plot_pearsoniii_curve(ax, fit["params"], fit.get("ci"), color)
+        else:
+            print(f"  [{dist_name}] plotting not yet implemented, skipping.")
 
-    # --- Vertical reference lines at 1%, 0.2%, 0.1% --------------------------
+    # Vertical reference lines at 1%, 0.2%, 0.1%
     for p_vl, lbl in zip(_V_LINE_PROBS, _V_LINE_LABELS, strict=False):
         z_vl = stats.norm.ppf(p_vl)
         ax.axvline(x=z_vl, color="dimgray", linestyle=":", linewidth=1.1, alpha=0.75, zorder=1)
-        # Label at top of the axis (y in axes coords via xaxis_transform)
         ax.text(
             z_vl,
             0.99,
@@ -171,7 +206,7 @@ def probability_plot(
             color="dimgray",
         )
 
-    # --- WWQ annotation -------------------------------------------------------
+    # WWQ annotation
     ax.annotate(
         f"WWQ = {wwq_value:.0f} m³/s\n(year {wwq_year})",
         xy=(wwq_z, wwq_value),
@@ -184,10 +219,8 @@ def probability_plot(
         zorder=5,
     )
 
-    # --- Y axis: linear scale -------------------------------------------------
     ax.set_ylabel("Discharge Q  [m³/s]", fontsize=11)
 
-    # --- X axis: probit scale, inverted, percentage labels --------------------
     z_ticks = [stats.norm.ppf(p) for p in _P_TICKS]
     ax.set_xticks(z_ticks)
     ax.set_xticklabels(_P_LABELS)
@@ -199,13 +232,12 @@ def probability_plot(
 
     ax.set_title(
         f"{station_name}  ·  {river_name}  ·  code {station_code}\n"
-        "Annual maximum flow — Log-Normal probability plot",
+        "Annual maximum flow — probability plot",
         fontsize=12,
         fontweight="bold",
     )
     ax.legend(loc="upper right", fontsize=10)
 
-    # --- Save -----------------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{uuid}.png"
     fig.savefig(output_path, dpi=150, bbox_inches="tight")

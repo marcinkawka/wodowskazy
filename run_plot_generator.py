@@ -25,11 +25,10 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from modules.db import DuckDatabase as Database
-from modules.plotting import probability_plot
+from modules.plotting import plot_distribution
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"
 OUTPUT_DIR = Path(__file__).parent / "output"
@@ -55,25 +54,47 @@ def fetch_wq(db: Database, station_code: str) -> pd.Series:
     return pd.Series(values, index=years, name="WQ")
 
 
-def fetch_fitted_params(db: Database, station_code: str) -> dict | None:
+def fetch_fitted_params(db: Database, station_code: str) -> list[dict]:
+    """Return the most-recent fit per distribution type for this station/frequency.
+
+    Each entry contains:
+      ``fitted_id``        — PK of the fitted_distributions row
+      ``distribution_id``  — FK into the distributions catalogue
+      ``distribution_name``— human-readable name (e.g. "Log-Normal", "Gumbel")
+      ``params``           — parsed distribution_params JSON dict
+    """
+    rows = db.con.execute(
+        """
+        SELECT fd.id, fd.distribution_id, d.name, fd.distribution_params
+        FROM fitted_distributions fd
+        JOIN distributions d ON fd.distribution_id = d.id
+        WHERE fd.station_code = ? AND fd.frequency_id = ?
+        ORDER BY fd.distribution_id, fd.id DESC
+        """,
+        [station_code, FREQUENCY_ID],
+    ).fetchall()
+    seen: set[int] = set()
+    result: list[dict] = []
+    for fitted_id, dist_id, dist_name, params_json in rows:
+        if dist_id not in seen:
+            seen.add(dist_id)
+            result.append(
+                {
+                    "fitted_id": fitted_id,
+                    "distribution_id": dist_id,
+                    "distribution_name": dist_name,
+                    "params": json.loads(params_json),
+                }
+            )
+    return result
+
+
+def fetch_ci(db: Database, fitted_distribution_id: int) -> dict | None:
     row = db.con.execute(
-        "SELECT distribution_params FROM fitted_distributions"
-        " WHERE station_code = ? AND frequency_id = ?"
+        "SELECT ci_data FROM ci_estimates"
+        " WHERE fitted_distribution_id = ?"
         " ORDER BY id DESC LIMIT 1",
-        [station_code, FREQUENCY_ID],
-    ).fetchone()
-    if row is None:
-        return None
-    return json.loads(row[0])
-
-
-def fetch_ci(db: Database, station_code: str) -> dict | None:
-    row = db.con.execute(
-        "SELECT c.ci_data FROM ci_estimates c"
-        " JOIN fitted_distributions fd ON c.fitted_distribution_id = fd.id"
-        " WHERE fd.station_code = ? AND fd.frequency_id = ?"
-        " ORDER BY fd.id DESC LIMIT 1",
-        [station_code, FREQUENCY_ID],
+        [fitted_distribution_id],
     ).fetchone()
     if row is None:
         return None
@@ -99,8 +120,8 @@ def run_station(
         print(f"  WARNING: no WQ data for {station_name}, skipping.")
         return
 
-    params = fetch_fitted_params(db, station_code)
-    if params is None:
+    all_fitted = fetch_fitted_params(db, station_code)
+    if not all_fitted:
         print(
             f"  WARNING: no fitted distribution found for {station_name}. "
             "Run run_estimation.py first."
@@ -112,25 +133,22 @@ def run_station(
         print(f"  WARNING: station {station_code} not found in gauges_list.")
         return
 
-    ci = fetch_ci(db, station_code)
-    ci_lower = np.array(ci["q_lower"]) if ci else None
-    ci_upper = np.array(ci["q_upper"]) if ci else None
-    ci_p_grid = np.array(ci["probabilities"]) if ci else None
-    ci_alpha = float(ci["alpha"]) if ci else 0.1
+    fits: list[dict] = []
+    for fit in all_fitted:
+        dist_name: str = fit["distribution_name"]
+        print(f"  [{dist_name}] parameters for {station_name}:")
+        for k, v in fit["params"].items():
+            print(f"    {k}: {v:.2f}")
+        fits.append({**fit, "ci": fetch_ci(db, fit["fitted_id"])})
 
-    output_path = probability_plot(
+    output_path = plot_distribution(
         station_code=station_code,
         station_name=station_name,
         river_name=river_name,
         uuid=uuid,
         wq_series=wq,
-        mu_log=params["mu_log"],
-        sigma_log=params["sigma_log"],
+        fits=fits,
         output_dir=OUTPUT_DIR,
-        ci_lower=ci_lower,
-        ci_upper=ci_upper,
-        ci_p_grid=ci_p_grid,
-        ci_alpha=ci_alpha,
     )
     print(f"  Saved → {output_path}")
 
