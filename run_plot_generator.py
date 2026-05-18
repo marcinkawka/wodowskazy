@@ -65,24 +65,29 @@ def fetch_fitted_params(db: Database, station_code: str) -> list[dict]:
     """
     rows = db.con.execute(
         """
-        SELECT fd.id, fd.distribution_id, d.name, fd.distribution_params
+        SELECT fd.id, fd.distribution_id, d.name,
+               fd.estimation_method_id, em.name, fd.distribution_params
         FROM fitted_distributions fd
         JOIN distributions d ON fd.distribution_id = d.id
+        JOIN estimation_methods em ON fd.estimation_method_id = em.id
         WHERE fd.station_code = ? AND fd.frequency_id = ?
-        ORDER BY fd.distribution_id, fd.id DESC
+        ORDER BY fd.distribution_id, fd.estimation_method_id, fd.id DESC
         """,
         [station_code, FREQUENCY_ID],
     ).fetchall()
-    seen: set[int] = set()
+    seen: set[tuple[int, int]] = set()
     result: list[dict] = []
-    for fitted_id, dist_id, dist_name, params_json in rows:
-        if dist_id not in seen:
-            seen.add(dist_id)
+    for fitted_id, dist_id, dist_name, method_id, method_name, params_json in rows:
+        key = (dist_id, method_id)
+        if key not in seen:
+            seen.add(key)
             result.append(
                 {
                     "fitted_id": fitted_id,
                     "distribution_id": dist_id,
                     "distribution_name": dist_name,
+                    "estimation_method_id": method_id,
+                    "estimation_method_name": method_name,
                     "params": json.loads(params_json),
                 }
             )

@@ -20,6 +20,7 @@ where z_p = Φ⁻¹(p) is the standard normal quantile used as the x-coordinate.
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -69,20 +70,19 @@ def _plot_lognormal_curve(
         linestyle="-",
         linewidth=2.0,
         color=color,
-        label=f"Log-Normal (MoM):  μ={mu_log:.3f},  σ={sigma_log:.3f}",
+        label="Log-Normal (MoM)",
         zorder=2,
     )
 
     if ci:
         z_ci = stats.norm.ppf(np.array(ci["probabilities"]))
-        ci_pct = round((1 - float(ci["alpha"])) * 100)
         ax.fill_between(
             z_ci,
             np.array(ci["q_lower"]),
             np.array(ci["q_upper"]),
             alpha=0.20,
             color=color,
-            label=f"{ci_pct}% CI (Log-Normal)",
+            label="_nolegend_",
             zorder=1,
         )
 
@@ -108,20 +108,95 @@ def _plot_pearsoniii_curve(
         linestyle="-",
         linewidth=2.0,
         color=color,
-        label=f"Pearson III (MLE):  ε={epsilon:.3f},  λ={lam:.3f},  α={alpha:.3f}",
+        label="Pearson III (MLE)",
         zorder=2,
     )
 
     if ci:
         z_ci = stats.norm.ppf(np.array(ci["probabilities"]))
-        ci_pct = round((1 - float(ci["alpha"])) * 100)
         ax.fill_between(
             z_ci,
             np.array(ci["q_lower"]),
             np.array(ci["q_upper"]),
             alpha=0.20,
             color=color,
-            label=f"{ci_pct}% CI (Pearson III)",
+            label="_nolegend_",
+            zorder=1,
+        )
+
+
+def _plot_lognormal3p_curve(
+    ax: plt.Axes,
+    params: dict,
+    ci: dict | None,
+    color: str,
+) -> None:
+    """Add a 3-parameter Log-Normal (MLE) theoretical curve and optional CI band to *ax*."""
+    epsilon: float = params["epsilon"]
+    mu: float = params["mu"]
+    sigma: float = params["sigma"]
+
+    p_curve = np.linspace(0.0005, 0.9995, 1000)
+    z_curve = stats.norm.ppf(p_curve)
+    q_curve = epsilon + np.exp(mu - sigma * z_curve)
+
+    ax.plot(
+        z_curve,
+        q_curve,
+        linestyle="-",
+        linewidth=2.0,
+        color=color,
+        label="Log-Normal 3p (MLE)",
+        zorder=2,
+    )
+
+    if ci:
+        z_ci = stats.norm.ppf(np.array(ci["probabilities"]))
+        ax.fill_between(
+            z_ci,
+            np.array(ci["q_lower"]),
+            np.array(ci["q_upper"]),
+            alpha=0.20,
+            color=color,
+            label="_nolegend_",
+            zorder=1,
+        )
+
+
+def _plot_weibull_curve(
+    ax: plt.Axes,
+    params: dict,
+    ci: dict | None,
+    color: str,
+) -> None:
+    """Add a Weibull (MLE) theoretical curve and optional CI band to *ax*."""
+    epsilon: float = params["epsilon"]
+    alpha: float = params["alpha"]
+    beta: float = params["beta"]
+
+    p_curve = np.linspace(0.0005, 0.9995, 1000)
+    z_curve = stats.norm.ppf(p_curve)
+    q_curve = epsilon + (-np.log(p_curve)) ** (1.0 / beta) / alpha
+
+    ax.plot(
+        z_curve,
+        q_curve,
+        linestyle="-",
+        linewidth=2.0,
+        color=color,
+        label="Weibull (MLE)",
+        zorder=2,
+    )
+
+    if ci:
+        z_ci = stats.norm.ppf(np.array(ci["probabilities"]))
+        ax.fill_between(
+            z_ci,
+            np.array(ci["q_lower"]),
+            np.array(ci["q_upper"]),
+            alpha=0.20,
+            color=color,
+            label="_nolegend_",
             zorder=1,
         )
 
@@ -182,12 +257,17 @@ def plot_distribution(
     # Theoretical curves — one per fit
     for i, fit in enumerate(fits):
         dist_name: str = fit["distribution_name"]
+        method_id: int = fit.get("estimation_method_id", 0)
         color = _CURVE_COLORS[i % len(_CURVE_COLORS)]
 
-        if dist_name == "Log-Normal":
+        if dist_name == "Log-Normal" and method_id != 2:
             _plot_lognormal_curve(ax, fit["params"], fit.get("ci"), color)
+        elif dist_name == "Log-Normal" and method_id == 2:
+            _plot_lognormal3p_curve(ax, fit["params"], fit.get("ci"), color)
         elif dist_name == "Pearson III":
             _plot_pearsoniii_curve(ax, fit["params"], fit.get("ci"), color)
+        elif dist_name == "Weibull":
+            _plot_weibull_curve(ax, fit["params"], fit.get("ci"), color)
         else:
             print(f"  [{dist_name}] plotting not yet implemented, skipping.")
 
@@ -220,6 +300,7 @@ def plot_distribution(
     )
 
     ax.set_ylabel("Discharge Q  [m³/s]", fontsize=11)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}".replace(",", " ")))
 
     z_ticks = [stats.norm.ppf(p) for p in _P_TICKS]
     ax.set_xticks(z_ticks)
@@ -236,7 +317,7 @@ def plot_distribution(
         fontsize=12,
         fontweight="bold",
     )
-    ax.legend(loc="upper right", fontsize=10)
+    ax.legend(loc="upper left", fontsize=10)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{uuid}.png"

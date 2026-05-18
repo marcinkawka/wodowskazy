@@ -83,8 +83,8 @@ class StatsRepository:
     def compute_seasonal(self) -> int:
         """
         Aggregate measurements into seasonal statistics using hydro_year and hydro_month.
-        Winter half-year: Nov–Apr (hydro_months 1–6).
-        Summer half-year: May–Oct (hydro_months 7–12).
+        Winter half-year: Nov-Apr (hydro_months 1-6).
+        Summer half-year: May-Oct (hydro_months 7-12).
         """
         self._con.execute("""
             INSERT INTO stats_seasonal

@@ -21,7 +21,14 @@ from pathlib import Path
 import pandas as pd
 
 from modules.db import DuckDatabase as Database
-from modules.estimation import BootstrapCI, DischargeEstimator, LogNormalMoM, PearsonIIIMLE
+from modules.estimation import (
+    BootstrapCI,
+    DischargeEstimator,
+    LogNormal3pMLE,
+    LogNormalMoM,
+    PearsonIIIMLE,
+    WeibullMLE,
+)
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"
 
@@ -33,7 +40,9 @@ STATIONS = [
 
 ESTIMATOR_CLASSES: list[type[DischargeEstimator]] = [
     LogNormalMoM,
+    LogNormal3pMLE,
     PearsonIIIMLE,
+    WeibullMLE,
 ]
 
 RETURN_PERIODS = [100, 1000]

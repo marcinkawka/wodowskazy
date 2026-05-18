@@ -247,6 +247,37 @@ class DuckDatabase(Database):
             CREATE SEQUENCE IF NOT EXISTS stat_test_results_id_seq START 1
         """)
 
+    def create_dist_tests_schema(self) -> None:
+        """
+        Create the distribution goodness-of-fit test table and seed the catalogue.
+
+        Requires stat_tests and fitted_distributions to already exist
+        (call create_stat_tests_schema and create_frequency_analysis_schema first).
+
+        Catalogue extension:
+            stat_tests — adds Lambda-Kolmogorov (id=7)
+
+        Results:
+            dist_test_results — append-only; FK to stat_tests and fitted_distributions
+        """
+        self.con.execute("""
+            INSERT INTO stat_tests (id, name)
+            VALUES (7, 'Lambda-Kolmogorov')
+            ON CONFLICT (id) DO NOTHING
+        """)
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS dist_test_results (
+                id                     INTEGER  PRIMARY KEY,
+                fitted_distribution_id INTEGER  NOT NULL REFERENCES fitted_distributions(id),
+                test_id                INTEGER  NOT NULL REFERENCES stat_tests(id),
+                result_notes           VARCHAR,
+                result                 BOOLEAN  NOT NULL
+            )
+        """)
+        self.con.execute("""
+            CREATE SEQUENCE IF NOT EXISTS dist_test_results_id_seq START 1
+        """)
+
     def create_frequency_analysis_schema(self) -> None:
         """
         Create catalogue and result tables for flood-frequency analysis.
@@ -275,7 +306,8 @@ class DuckDatabase(Database):
                 (2, 'Log-Normal',      NULL),
                 (3, 'Pearson III',     NULL),
                 (4, 'Log-Pearson III', NULL),
-                (5, 'GEV',             NULL)
+                (5, 'GEV',             NULL),
+                (6, 'Weibull',         NULL)
             ON CONFLICT (id) DO NOTHING
         """)
 
