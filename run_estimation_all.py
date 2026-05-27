@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Fit a Log-Normal distribution (Method of Moments) to annual maximum flows (WQ)
-and save Q_100 / Q_1000 estimates and fitted parameters to the database for
-every station whose WQ series contains more than 30 years of data.
+Fit distributions to annual maximum flows (WQ) and save Q_100 / Q_1000
+estimates and fitted parameters to the database for every station whose
+WQ series contains more than 30 years of data.
+
+Estimators: LogNormalMoM, LogNormal3pMLE, PearsonIIIMLE, WeibullMLE.
 
 Results are appended to ``fitted_distributions`` and ``estimated_discharges``;
 re-running the script will add duplicate rows.
@@ -19,9 +21,23 @@ from pathlib import Path
 import pandas as pd
 
 from modules.db import DuckDatabase as Database
-from modules.estimation import BootstrapCI, LogNormalMoM
+from modules.estimation import (
+    BootstrapCI,
+    DischargeEstimator,
+    LogNormal3pMLE,
+    LogNormalMoM,
+    PearsonIIIMLE,
+    WeibullMLE,
+)
 
 DB_PATH = Path(__file__).parent / "hydro.duckdb"
+
+ESTIMATOR_CLASSES: list[type[DischargeEstimator]] = [
+    LogNormalMoM,
+    LogNormal3pMLE,
+    PearsonIIIMLE,
+    WeibullMLE,
+]
 
 RETURN_PERIODS = [100, 1000]
 FREQUENCY_ID = 1  # annual
@@ -63,7 +79,7 @@ def fetch_wq(db: Database, station_code: str) -> pd.Series:
 def insert_fitted_distribution(
     db: Database,
     station_code: str,
-    estimator: LogNormalMoM,
+    estimator: DischargeEstimator,
     series: pd.Series,
 ) -> int:
     source_info = {
@@ -111,7 +127,7 @@ def insert_estimate(
     db: Database,
     station_code: str,
     return_period: int,
-    estimator: LogNormalMoM,
+    estimator: DischargeEstimator,
     value: float,
 ) -> None:
     notes = estimator.fitted_params()
@@ -135,25 +151,24 @@ def insert_estimate(
     )
 
 
-def run_station(db: Database, station_code: str, label: str) -> None:
-    series = fetch_wq(db, station_code)
-    if series.empty:
-        print(f"  WARNING: no WQ data for {label}, skipping.")
-        return
-
+def run_estimator(
+    db: Database,
+    station_code: str,
+    series: pd.Series,
+    estimator_cls: type[DischargeEstimator],
+) -> None:
     try:
-        estimator = LogNormalMoM()
+        estimator = estimator_cls()
         estimator.fit(series)
     except ValueError as exc:
-        print(f"  WARNING: fit failed for {label}: {exc}")
+        print(f"    WARNING: [{estimator_cls.__name__}] fit failed: {exc}")
         return
 
     params = estimator.fitted_params()
-    print(
-        f"  n={int(params['n'])}  "
-        f"mu_log={params['mu_log']:.4f}  "
-        f"sigma_log={params['sigma_log']:.4f}"
+    params_str = ", ".join(
+        f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in params.items()
     )
+    print(f"  [{estimator_cls.__name__}] {params_str}")
 
     fitted_id = insert_fitted_distribution(db, station_code, estimator, series)
 
@@ -162,9 +177,19 @@ def run_station(db: Database, station_code: str, label: str) -> None:
         insert_estimate(db, station_code, t, estimator, q)
         print(f"    Q_{t:<4d} = {q:.1f} m³/s")
 
-    ci_result = BootstrapCI(n_samples=5000, alpha=0.1).compute(series, LogNormalMoM)
+    ci_result = BootstrapCI(n_samples=5000, alpha=0.1).compute(series, estimator_cls)
     insert_ci_estimate(db, fitted_id, ci_result)
     print(f"    CI (90%, bootstrap n={ci_result['n_valid']}) stored.")
+
+
+def run_station(db: Database, station_code: str, label: str) -> None:
+    series = fetch_wq(db, station_code)
+    if series.empty:
+        print(f"  WARNING: no WQ data for {label}, skipping.")
+        return
+
+    for estimator_cls in ESTIMATOR_CLASSES:
+        run_estimator(db, station_code, series, estimator_cls)
 
 
 def main() -> None:
